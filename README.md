@@ -28,3 +28,87 @@ El análisis se encuentra en:
 Crear las Lag Features, integrar los datos de demanda eléctrica,
 construir el dataset de entrenamiento, entrenar los modelos de
 regresión y evaluar su rendimiento mediante RMSE(ROOT MEAN SQUARED ERROR) y R^2.
+
+
+## Dataset y descarga del proyecto
+
+El archivo `DATA/era5_aruba.csv` ocupa aproximadamente 421,5 MB
+y se almacena mediante Git LFS.
+
+Para descargar el proyecto con el dataset completo, es necesario
+tener Git y Git LFS instalados.
+
+### 1. Instalar Git LFS
+
+En macOS, si utilizas Homebrew:
+
+```bash
+brew install git-lfs
+```
+
+Para Windows u otros sistemas, consulta:
+https://git-lfs.com
+
+Después de instalarlo, ejecuta una vez por ordenador:
+
+```bash
+git lfs install
+```
+
+### 2. Descargar el proyecto
+
+Si el repositorio es privado, necesitas acceso como colaborador
+y autenticarte con una cuenta de GitHub autorizada.
+
+Desde la carpeta donde quieras guardar el proyecto:
+
+```bash
+git clone https://github.com/ginolevanoDev/PROYECTO_COMP_I.git
+cd PROYECTO_COMP_I
+git lfs pull
+```
+
+El CSV estará en `DATA/era5_aruba.csv`.
+
+Si ya has clonado el repositorio, no necesitas repetir este paso.
+
+### 3. Actualizar una copia existente
+
+Antes de empezar a trabajar, guarda tus cambios pendientes
+en un commit. Después, desde la carpeta del repositorio:
+
+```bash
+git pull
+git lfs pull
+```
+
+Git LFS solo descargará los archivos necesarios que no estén
+disponibles en tu copia local.
+
+### 4. Compartir cambios
+
+Después de crear, modificar o eliminar archivos:
+
+```bash
+git status
+git add .
+git commit -m "Descripción de los cambios realizados"
+git push
+```
+
+Revisa `git status` antes de añadir los archivos para comprobar
+qué cambios vas a compartir.
+
+Los CSV ya están configurados para utilizar Git LFS mediante
+`.gitattributes`. Los colaboradores no necesitan repetir
+`git lfs track`.
+
+### Uso del dataset en equipo
+
+- Conservar el CSV original como fuente de datos.
+- Realizar la limpieza, las transformaciones y la creación
+  de variables desde el notebook.
+- Evitar subir versiones innecesarias del CSV: cada versión
+  modificada ocupa espacio adicional en Git LFS.
+- Trabajar con la copia local del dataset para evitar
+  descargas completas repetidas.

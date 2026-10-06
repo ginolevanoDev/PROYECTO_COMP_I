@@ -70,7 +70,6 @@ git lfs pull
 
 El CSV estará en `DATA/era5_aruba.csv`.
 
-Si ya has clonado el repositorio, no necesitas repetir este paso.
 
 ### 3. Actualizar una copia existente
 

@@ -1,0 +1,63 @@
+{
+  "nombre": "Vestas V90-3.0",
+  "enlace": "https://es.wind-turbine-models.com/turbines/603-vestas-v90-3-0",
+  "hoja_de_datos": {
+    "De energía": {
+      "Potencia nominal": "3,000.0 kW",
+      "Rangos de potencia flexibles": "-",
+      "Velocidad del viento": "4.0 m/s",
+      "Velocidad nominal del viento": "15.0 m/s",
+      "Velocidad del viento de corte": "25.0 m/s",
+      "Velocidad del viento de supervivencia": "-",
+      "Wind zone (DIBt)": "-",
+      "Wind class (IEC)": "-"
+    },
+    "Hélice": {
+      "diámetro": "90.0 m",
+      "superficie del rotor": "6,362.0 m²",
+      "número de hojas": "3",
+      "Velocidad, máx.": "18.4 U/min",
+      "velocidad de punta": "87 m/s",
+      "designación del tipo": "-",
+      "esencial": "-",
+      "Fabricante": "-",
+      "Densidad de potencia 1": "471.5 W/m²",
+      "Densidad de potencia 2": "2.1 m²/kW"
+    },
+    "Caja de cambios": {
+      "planear": "spur/planetary",
+      "alturas": "3.0",
+      "traducción": "-",
+      "Fabricante": "-"
+    },
+    "Grupo electrógeno": {
+      "planear": "Asynchronus",
+      "número": "1",
+      "Velocidad, máx.": "-",
+      "Voltaje": "1,000.0 V",
+      "conexión a la red": "OptiSpeed",
+      "frecuencia de red": "50 Hz",
+      "Fabricante": "-"
+    },
+    "Torre": {
+      "Altura del buje": "80/105 m",
+      "Planear": "Steel tube",
+      "Moldear": "conical",
+      "Protección anticorrosiva": "painted",
+      "Fabricante": "-"
+    },
+    "Masas / Pesos": {
+      "Peso de una hoja": "-",
+      "Peso del buje": "-",
+      "Peso del rotor": "41.0 t",
+      "Peso de la góndola": "70.0 t",
+      "Peso de la torre, máx.": "285.0 t",
+      "Peso del conjunto": "396.0 t"
+    },
+    "Otros": {
+      "Fecha de construcción": "-",
+      "Offshore": "No",
+      "Onshore": "Sí"
+    }
+  }
+}

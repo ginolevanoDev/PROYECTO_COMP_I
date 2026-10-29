@@ -10,3 +10,6 @@ __pycache__/
 
 # Entorno virtual
 .venv/
+
+data/raw/train_aruba_lecturas.json
+

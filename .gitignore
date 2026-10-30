@@ -1,3 +1,15 @@
 
 aruba_readings_20260924.json
 .DS_Store
+
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Entorno virtual
+.venv/
+
+data/raw/train_aruba_lecturas.json
+

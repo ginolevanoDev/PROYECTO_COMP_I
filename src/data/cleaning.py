@@ -15,20 +15,17 @@ LOGGER = logging.getLogger(__name__)
 KEY = ["station_id", "timestamp"]
 
 
-def to_datetime_utc(df, col="timestamp", offset_h=0):
-    """Parsea `col` a UTC y suma `offset_h` horas (corrige la hora local etiquetada como Z)."""
+def corregir_hora_local(df, offset_h, col="timestamp"):
+    """Suma `offset_h` horas a `col`, ya en UTC (corrige la hora local etiquetada como Z).
+
+    Descarta las filas cuyo timestamp no se pudo convertir (NaT tras `corregir_tipos_y_formatos`).
+    """
     df = df.copy()
-    df[col] = pd.to_datetime(df[col], utc=True, errors="coerce") + pd.Timedelta(hours=offset_h)
+    df[col] = df[col] + pd.Timedelta(hours=offset_h)
     malos = df[col].isna().sum()
     if malos:
         log.warning("RF-03: %d timestamps no parseables descartados", malos)
         df = df.dropna(subset=[col])
-    return df
-
-
-def fix_types(df, columns):
-    df = df.copy()
-    df[columns] = df[columns].apply(pd.to_numeric, errors="coerce").astype("float64")
     return df
 
 
@@ -116,8 +113,8 @@ def clean_readings(df, cfg):
     """Pipeline RF-03 completo sobre las lecturas ya unidas a sus estaciones (RF-01)."""
     variables = list(cfg["validation_ranges"])
     c = cfg["cleaning"]
-    df = to_datetime_utc(df, offset_h=cfg["time"]["station_utc_offset_h"])
-    df = fix_types(df, variables)
+    df = corregir_tipos_y_formatos(df)  # HU-19
+    df = corregir_hora_local(df, cfg["time"]["station_utc_offset_h"])
     df = drop_duplicates(df, variables)
     df = sort_series(df)
     df = filter_active(df)

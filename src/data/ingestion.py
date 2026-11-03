@@ -21,7 +21,7 @@ def cargar_estaciones_y_lecturas(
         if not ruta.is_file():
             raise FileNotFoundError(f"No se ha encontrado el archivo: {ruta}")
 
-    # convert_dates=False: el timestamp se parsea en cleaning.to_datetime_utc (HU-19)
+    # convert_dates=False: el timestamp se parsea en cleaning.corregir_tipos_y_formatos (HU-19)
     lecturas = pd.read_json(ruta_lecturas, convert_dates=False)
     estaciones = pd.read_json(ruta_estaciones, convert_dates=False)
     return unir_lecturas_estaciones(lecturas, estaciones)

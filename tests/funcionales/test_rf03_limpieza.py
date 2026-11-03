@@ -23,6 +23,12 @@ def test_timestamp_utc_con_correccion_horaria(readings, stations, cfg):
     assert df["timestamp"].min() == pd.Timestamp("2026-04-01T00:00:00Z") + offset
 
 
+def test_timestamps_invalidos_se_descartan(readings, stations, cfg):
+    readings.loc[len(readings) - 1, "timestamp"] = "fecha_invalida"
+    df = _limpio(readings, stations, cfg)
+    assert df["timestamp"].notna().all()
+    assert len(df) == 11
+
 def test_tipos_numericos(readings, stations, cfg):
     readings["pressure_hpa"] = readings["pressure_hpa"].astype(str)
     df = _limpio(readings, stations, cfg)

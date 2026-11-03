@@ -24,7 +24,7 @@ def test_timestamp_utc_con_correccion_horaria(readings, stations, cfg):
 
 
 def test_timestamps_invalidos_se_descartan(readings, stations, cfg):
-    readings.loc[len(readings) - 1, "timestamp"] = "fecha_invalida"
+    readings.loc[len(readings) - 2, "timestamp"] = "fecha_invalida"  # la última fila es un duplicado
     df = _limpio(readings, stations, cfg)
     assert df["timestamp"].notna().all()
     assert len(df) == 11

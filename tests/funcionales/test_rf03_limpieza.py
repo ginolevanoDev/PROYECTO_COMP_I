@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 
 from src.data.cleaning import KEY, clean_readings, drop_duplicates, flag_out_of_range, treat_outliers
-from src.data.ingestion import merge_readings_stations
+from src.data.ingestion import unir_lecturas_estaciones
 
 
 def _limpio(readings, stations, cfg):
-    return clean_readings(merge_readings_stations(readings, stations), cfg)
+    return clean_readings(unir_lecturas_estaciones(readings, stations), cfg)
 
 
 def test_sin_duplicados_y_ordenado(readings, stations, cfg):

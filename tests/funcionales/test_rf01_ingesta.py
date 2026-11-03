@@ -70,3 +70,11 @@ def test_rechaza_archivo_con_columnas_obligatorias_ausentes(tmp_path):
 
     with pytest.raises(ValueError, match="station_id"):
         cargar_estaciones_y_lecturas(lecturas, estaciones)
+
+def test_union_en_memoria_sin_huerfanas(readings, stations):
+    from src.data.ingestion import unir_lecturas_estaciones
+
+    resultado = unir_lecturas_estaciones(readings, stations)
+
+    assert len(resultado) == len(readings)
+    assert resultado["name"].notna().all()

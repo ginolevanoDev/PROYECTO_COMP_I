@@ -38,6 +38,9 @@ cleaning:
   iqr_k: 3.0
   # Huecos de hasta 3 pasos (15 min) se interpolan; los más largos quedan en NaN.
   max_interp_steps: 3
+  # HU-20: un pico en estas columnas mientras llueve es real, no un fallo de sensor
+  # (247 de 249 picos de visibilidad coinciden con precipitation_mm > 0).
+  rain_explained_columns: [visibility_km]
   # EDA §8: temperatura en contrafase con el sol y presión que no baja con la altitud.
   unreliable_columns: [temperature_c, pressure_hpa]
 

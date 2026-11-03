@@ -71,3 +71,31 @@ def test_huecos_largos_no_se_inventan():
     df = pd.DataFrame({"station_id": "A", "wind_speed_kmh": s})
     out = treat_outliers(df, ["wind_speed_kmh"], k=3.0, max_steps=3)
     assert out["wind_speed_kmh"].isna().sum() == 5
+
+
+def test_pico_con_lluvia_se_conserva_como_evento():
+    vis = [12.0, 12.1] * 5 + [6.8] + [12.0, 12.1] * 5
+    lluvia = [0.0] * 10 + [7.0] + [0.0] * 10
+    df = pd.DataFrame({"station_id": "A", "visibility_km": vis, "precipitation_mm": lluvia})
+    out = treat_outliers(df, ["visibility_km"], k=3.0, max_steps=3, rain_columns=["visibility_km"])
+    assert out["visibility_km"].tolist() == vis
+    assert out.loc[10, "qc_event"]
+    assert out["qc_flags"].sum() == 0
+
+
+def test_pico_sin_lluvia_se_trata_como_sensor():
+    vis = [12.0, 12.1] * 5 + [6.8] + [12.0, 12.1] * 5
+    df = pd.DataFrame({"station_id": "A", "visibility_km": vis, "precipitation_mm": 0.0})
+    out = treat_outliers(df, ["visibility_km"], k=3.0, max_steps=3, rain_columns=["visibility_km"])
+    assert out.loc[10, "visibility_km"] != 6.8
+    assert out.loc[10, "qc_flags"] == 1
+
+
+def test_iqr_por_estacion():
+    # 30 km/h es normal en B (estación de cumbre) aunque sería un pico en A
+    a = [20.0, 21.0] * 10
+    b = [30.0, 31.0] * 10
+    df = pd.DataFrame({"station_id": ["A"] * 20 + ["B"] * 20, "wind_speed_kmh": a + b})
+    out = treat_outliers(df, ["wind_speed_kmh"], k=3.0, max_steps=3)
+    assert out["wind_speed_kmh"].tolist() == a + b
+    assert out["qc_flags"].sum() == 0

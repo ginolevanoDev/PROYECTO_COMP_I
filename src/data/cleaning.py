@@ -71,13 +71,15 @@ def _run_length(mask):
     return mask.groupby((~mask).cumsum()).transform("sum").where(mask, 0)
 
 
-def treat_outliers(df, columns, k=3.0, max_steps=3):
-    """Outliers por IQR, calculados por estación.
+def treat_outliers(df, columns, k=3.0, max_steps=3, rain_columns=()):
+    """Outliers por IQR, calculados por estación (HU-20).
 
     - Rachas de hasta `max_steps` pasos: picos de sensor -> NaN e interpolación.
     - Rachas más largas: eventos meteorológicos reales (en el dataset, chubascos de ~4 h con viento
       ~50 km/h, presión ~1000 hPa y lluvia). Se conservan y se marcan en `qc_event`, porque son las
       rampas que el modelo debe aprender.
+    - Picos en `rain_columns` con `precipitation_mm > 0`: los explica la lluvia (en el dataset, 247 de
+      los 249 picos de visibilidad). Se conservan y se marcan en `qc_event`.
 
     Requiere el df ordenado por (station_id, timestamp).
     """
@@ -90,6 +92,12 @@ def treat_outliers(df, columns, k=3.0, max_steps=3):
     mask = (df[columns] < q1 - k * iqr) | (df[columns] > q3 + k * iqr)
     run = mask.groupby(df["station_id"]).transform(_run_length)
     spike = mask & (run <= max_steps)
+    rain_columns = [c for c in rain_columns if c in columns]
+    if rain_columns and "precipitation_mm" in df:
+        lluvia = df["precipitation_mm"].gt(0)
+        log.info("RF-03: picos explicados por lluvia (se conservan): %s",
+                 spike.loc[lluvia, rain_columns].sum().to_dict())
+        spike.loc[lluvia, rain_columns] = False
     df["qc_event"] = (mask & ~spike).any(axis=1)
     df[columns] = df[columns].mask(spike)
     df["qc_flags"] += spike.sum(axis=1)
@@ -119,7 +127,8 @@ def clean_readings(df, cfg):
     df = sort_series(df)
     df = filter_active(df)
     df = flag_out_of_range(df, cfg["validation_ranges"])
-    df = treat_outliers(df, c["outlier_columns"], k=c["iqr_k"], max_steps=c["max_interp_steps"])
+    df = treat_outliers(df, c["outlier_columns"], k=c["iqr_k"], max_steps=c["max_interp_steps"],
+                        rain_columns=c.get("rain_explained_columns", ()))
     if c.get("unreliable_columns"):
         log.warning("RF-03: columnas poco fiables según el EDA (no usar como feature principal): %s",
                     c["unreliable_columns"])

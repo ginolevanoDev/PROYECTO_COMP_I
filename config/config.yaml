@@ -1,0 +1,50 @@
+# Fuente única de parámetros del proyecto (RNF-08).
+# Las rutas son relativas a la raíz del repositorio.
+
+paths:
+  raw: data/raw
+  external: data/external
+  interim: data/interim
+  processed: data/processed
+  stations: data/raw/aruba_stations.json
+  readings: data/raw/train_aruba_lecturas.json
+  clean: data/interim/clean.parquet
+  model: modelo_aruba_energia.pkl
+
+time:
+  freq: 5min
+  tz: America/Aruba
+  # El EDA (§4.1) muestra que las marcas de las estaciones están en hora local
+  # etiquetadas como "Z": el UV solo cuadra con el sol (r = 0,99) sumando +4 h.
+  station_utc_offset_h: 4
+  horizon_min: 15
+
+# Rangos físicos admisibles (EDA §2.3). Fuera de rango -> NaN (RF-03, RF-16).
+validation_ranges:
+  temperature_c: [15, 45]
+  humidity_pct: [0, 100]
+  wind_speed_kmh: [0, 150]
+  wind_direction_deg: [0, 360]
+  pressure_hpa: [980, 1040]
+  precipitation_mm: [0, 200]
+  visibility_km: [0, 50]
+  uv_index: [0, 16]
+
+cleaning:
+  # Outliers por IQR, calculados por estación. Se usa k = 3 y no 1,5 porque con
+  # 1,5 el EDA marcaba miles de rachas legítimas. La precipitación se excluye:
+  # casi siempre es 0 y cualquier lluvia saldría como outlier.
+  outlier_columns: [temperature_c, humidity_pct, wind_speed_kmh, pressure_hpa, visibility_km]
+  iqr_k: 3.0
+  # Huecos de hasta 3 pasos (15 min) se interpolan; los más largos quedan en NaN.
+  max_interp_steps: 3
+  # EDA §8: temperatura en contrafase con el sol y presión que no baja con la altitud.
+  unreliable_columns: [temperature_c, pressure_hpa]
+
+thresholds:
+  # RF-13: la profesora confirmó (27/10/2026) que los 500 kW son por turbina.
+  # predict.py compara potencia_parque / n_turbines con este valor
+  # (10 turbinas -> 5000 kW en el parque).
+  alert_kw_per_turbine: 500
+
+seed: 42

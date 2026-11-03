@@ -45,7 +45,7 @@ El objetivo de este plan es pasar la lógica de los notebooks a módulos `src/` 
   - `paths`: raw, external, interim, processed, model `modelo_aruba_energia.pkl`.
   - `time`: `freq: 5min`, `tz: America/Aruba`, `horizon_min: 15`, `lags_min: [5,10,15,20]`, `windows: [3,6,12]`.
   - `physics`: `station_height_m: 10`, `hub_height_m: 100` (o el valor de la ficha), `shear_alpha: 1/7`, `n_turbines: 10`, `rated_kw_per_turbine: 3000`.
-  - `thresholds`: `alert_kw: 500` (RF-13), `p15_kw` (lo calcula RF-08 y se guarda aquí o en `processed/umbrales.json`), `pct_moderate: 0.40`, `pct_critical: 0.15`, `solar_min_wm2: 200`.
+  - `thresholds`: `alert_kw_per_turbine: 500` (RF-13, por turbina: confirmado por la profesora), `p15_kw` (lo calcula RF-08 y se guarda aquí o en `processed/umbrales.json`), `pct_moderate: 0.40`, `pct_critical: 0.15`, `solar_min_wm2: 200`.
   - `split`: `train_frac: 0.8`.
   - `seed: 42` (RNF-04).
   - `validation_ranges`: rangos físicos de cada variable, reutilizando el dict `RANGOS` del EDA.
@@ -80,10 +80,11 @@ Indicaciones clave:
   - Usar el consumo anual de WEB Aruba / IRENA (en torno a 900–1000 GWh/año, con pico de unos 130–140 MW; **verificar y citar**).
   - Forma diaria y semanal más un término de temperatura (`temperature_c` de las estaciones) y ruido con semilla.
   - Declararlo explícitamente como supuesto en el Alcance. Si el profesorado aporta datos reales, `load_or_build_demand()` los cargará en su lugar.
-- **Escala parque frente a umbral de 500 kW**: con una potencia media de unos 23 MW, el umbral de 500 kW de RF-13 casi nunca salta (0,0 % en el EDA).
-  - Mantener `alert_kw: 500` **literal** para RF-13, porque lo exige el enunciado.
-  - Las alertas por niveles de RF-08 y RF-18 (P15 y % de capacidad nominal) dan la señal útil.
-  - Justificarlo en la memoria. **Confirmar con la profesora** si los 500 kW se refieren a la potencia por turbina.
+- **Umbral de 500 kW de RF-13: es por turbina** (confirmado por la profesora el 27/10/2026).
+  - Aplicado al parque entero, casi nunca saltaba (0,0 % en el EDA, con una potencia media de unos 23 MW).
+  - `predict.py` compara `potencia_parque / n_turbines < alert_kw_per_turbine`, que equivale a 5.000 kW en el parque (el 16,7 % del nominal).
+  - Las alertas por niveles de RF-08 y RF-18 se mantienen como complemento.
+  - Recogerlo en la memoria.
 
 **Entregable del hito ETL**: `dataset_5min.parquet`, un notebook `notebooks/01_ETL_resultados.ipynb` que **importa `src/`** y muestra los resultados, `docs/design/arquitectura.md` (diagrama del flujo de datos) y `docs/design/inventario_fuentes.md`.
 
@@ -107,7 +108,7 @@ Indicaciones clave:
 
 - **`predict.py`** (RF-13):
   - Uso: `python predict.py --input registro.json` (o `--csv`, o `--values k=v ...`).
-  - Carga el `.pkl` con `load_model()`, construye el vector en el orden de `features`, predice t+15, imprime la potencia y luego exactamente `[ALERTA] Despacho Térmico/Solar requerido en 15m` si es menor de 500 kW, u `[OK] Operación Estable` en otro caso. También imprime el nivel de `classify()`.
+  - Carga el `.pkl` con `load_model()`, construye el vector en el orden de `features`, predice t+15, imprime la potencia y luego exactamente `[ALERTA] Despacho Térmico/Solar requerido en 15m` si la potencia por turbina (`potencia_parque / n_turbines`) es menor de 500 kW, u `[OK] Operación Estable` en otro caso. También imprime el nivel de `classify()`.
   - Gestiona con `try/except` la falta del modelo y las entradas inválidas (RNF-03).
   - Mide el tiempo de inferencia, que debe ser menor de 2 s (RNF-01).
   - Incluir `data/samples/registro_ejemplo.json` y `.csv`.
@@ -187,7 +188,7 @@ Cada casilla se marca solo cuando su test de `tests/` pasa. El mismo estado se r
 - [ ] **RNF-02**: el entrenamiento completo tiene un pico de memoria inferior a 8 GB (medido).
 
 ### Fase 5: Aplicación
-- [ ] **RF-13**: `predict.py` imprime exactamente `[ALERTA] Despacho Térmico/Solar requerido en 15m` (menos de 500 kW) u `[OK] Operación Estable`. *Hecho cuando* el test con `subprocess` cubre ambos casos.
+- [ ] **RF-13**: `predict.py` imprime exactamente `[ALERTA] Despacho Térmico/Solar requerido en 15m` (menos de 500 kW por turbina) u `[OK] Operación Estable`. *Hecho cuando* el test con `subprocess` cubre ambos casos.
 - [ ] **RNF-01**: la predicción de un registro tarda menos de 2 s, tanto en `predict.py` como en la app.
 - [ ] **RF-14**: la app carga el `.pkl` al iniciar.
 - [ ] **RNF-12**: no hay `file_uploader` que acepte `.pkl` y el modelo se carga solo desde la ruta de config.
@@ -235,7 +236,7 @@ Cada casilla se marca solo cuando su test de `tests/` pasa. El mismo estado se r
 
 1. Qué fichero de lecturas es el oficial: `train_aruba_lecturas.json` (31/03–30/06/2026) o `aruba_readings_20260924.json` (desde 01/09/2025, 1,35 M de filas). Hay que dejar el elegido en `data/raw/`.
 2. Si existen datos de demanda reales. Si no, se usa el perfil sintético documentado.
-3. Si los 500 kW de RF-13 son por parque o por turbina.
+3. ~~Si los 500 kW de RF-13 son por parque o por turbina.~~ **Resuelto: por turbina** (27/10/2026).
 4. La ficha de turbina confirmada (modelo y altura de buje).
 
 ## Verificación end-to-end

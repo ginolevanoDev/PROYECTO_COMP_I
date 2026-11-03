@@ -1,0 +1,45 @@
+{
+  "equipment_installed_capacity": {
+    "firm_capacity_thermal": {
+      "recip_phase_1_and_2": {
+        "engines": 6,
+        "capacity_mw": 47.4
+      },
+      "recip_phase_3": {
+        "engines": 4,
+        "capacity_mw": 45.6
+      },
+      "recip_phase_3_expansion": {
+        "engines": 2,
+        "capacity_mw": 36.2
+      },
+      "recip_phase_4": {
+        "engines": 6,
+        "capacity_mw": 103.2
+      },
+      "gas_turbine": {
+        "capacity_mw": 20.0
+      },
+      "total_firm_capacity_mw": 252.4
+    },
+    "renewables": {
+      "wind_turbines_wp_vaderpiet": {
+        "capacity_mw": 30.0
+      },
+      "sunrise_solar_park": {
+        "capacity_mw": 6.1
+      },
+      "total_renewables_mw": 36.1
+    },
+    "energy_storage": {
+      "bess_i": {
+        "power_mw": 1,
+        "capacity_mwh": 4
+      }
+    },
+    "load_demand_2026": {
+      "average_mw": 121,
+      "max_peak_mw": 172
+    }
+  }
+}

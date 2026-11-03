@@ -1,0 +1,28 @@
+# HU-23 / RF-05: aerogeneradores del parque eólico Vader Piet (RNF-08).
+# Fuentes (consultadas el 03/11/2026, ver docs/design/inventario_fuentes.md):
+# - Curva: base OEDB de windpowerlib, fila V90/3000 de power_curves.csv
+#   https://github.com/wind-python/windpowerlib/blob/master/windpowerlib/oedb/power_curves.csv
+#   (origen: https://www.wind-turbine-models.com/turbines/16-vestas-v90)
+# - Ficha: data/external/turbinas.json
+# - Parque: https://en.wikipedia.org/wiki/Vader_Piet_Wind_Farm
+
+modelo: Vestas V90-3.0
+n_turbines: 10
+rated_kw: 3000
+cut_in_ms: 4.0
+rated_ms: 15.0
+cut_out_ms: 25.0
+rotor_m: 90
+# La ficha da 80/105 m. Wikipedia y el documento de South Pole del parque dan 80 m
+# (Windbase da 105 m).
+hub_height_m: 80
+park_latlon: [12.474, -69.891]
+
+# Densidad del aire a la que está medida la curva (kg/m³).
+rho_ref: 1.225
+
+# Viento a buje (m/s) -> potencia de una turbina (kW). Entre puntos se interpola
+# linealmente. Por debajo de cut_in y a partir de cut_out la potencia es 0.
+curve:
+  ws_ms: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 25]
+  kw: [0, 0, 0, 0, 77, 190, 353, 581, 886, 1273, 1710, 2145, 2544, 2837, 2965, 2995, 3000, 3000]

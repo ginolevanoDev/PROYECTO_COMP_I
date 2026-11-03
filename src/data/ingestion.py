@@ -1,23 +1,19 @@
 """HU-17 / RF-01: carga de JSON y unión de lecturas con estaciones."""
 
-import logging
 from pathlib import Path
 
 import pandas as pd
 
-LOGGER = logging.getLogger(__name__)
+from src.utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 
 def cargar_estaciones_y_lecturas(
     ruta_lecturas: str | Path = "data/raw/train_aruba_lecturas.json",
     ruta_estaciones: str | Path = "data/raw/aruba_stations.json",
 ) -> pd.DataFrame:
-    """Devuelve las lecturas enriquecidas con los datos de su estación.
-
-    Se conservan todas las lecturas, incluso las que no tienen una estación
-    conocida; estas últimas se registran en el log. No se limpian datos ni
-    se convierten tipos, ya que esas operaciones corresponden a otras HU.
-    """
+    """Lee los JSON de lecturas y estaciones y los une con `unir_lecturas_estaciones`."""
     ruta_lecturas = Path(ruta_lecturas)
     ruta_estaciones = Path(ruta_estaciones)
 
@@ -25,9 +21,19 @@ def cargar_estaciones_y_lecturas(
         if not ruta.is_file():
             raise FileNotFoundError(f"No se ha encontrado el archivo: {ruta}")
 
+    # convert_dates=False: el timestamp se parsea en cleaning.corregir_tipos_y_formatos (HU-19)
     lecturas = pd.read_json(ruta_lecturas, convert_dates=False)
     estaciones = pd.read_json(ruta_estaciones, convert_dates=False)
+    return unir_lecturas_estaciones(lecturas, estaciones)
 
+
+def unir_lecturas_estaciones(lecturas: pd.DataFrame, estaciones: pd.DataFrame) -> pd.DataFrame:
+    """Devuelve las lecturas enriquecidas con los datos de su estación.
+
+    Se conservan todas las lecturas, incluso las que no tienen una estación
+    conocida; estas últimas se registran en el log. No se limpian datos ni
+    se convierten tipos, ya que esas operaciones corresponden a otras HU.
+    """
     columnas_lecturas = {"id", "station_id", "timestamp"}
     columnas_estaciones = {"id", "name"}
     for nombre, tabla, columnas in (

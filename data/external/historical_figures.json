@@ -1,0 +1,20 @@
+{
+  "historic_figures": [
+    { "year": 2025, "production_mwh": 139246, "capacity_percent": 53.0 },
+    { "year": 2024, "production_mwh": 129823, "capacity_percent": 49.4 },
+    { "year": 2023, "production_mwh": 129770, "capacity_percent": 49.4 },
+    { "year": 2022, "production_mwh": 115870, "capacity_percent": 44.1 },
+    { "year": 2021, "production_mwh": 141813, "capacity_percent": 54.0 },
+    { "year": 2020, "production_mwh": 133239, "capacity_percent": 50.7 },
+    { "year": 2019, "production_mwh": 150328, "capacity_percent": 57.2 },
+    { "year": 2018, "production_mwh": 160924, "capacity_percent": 61.2 },
+    { "year": 2017, "production_mwh": 139034, "capacity_percent": 52.9 },
+    { "year": 2016, "production_mwh": 145432, "capacity_percent": 55.3 },
+    { "year": 2015, "production_mwh": 175244, "capacity_percent": 66.7 },
+    { "year": 2014, "production_mwh": 161506, "capacity_percent": 61.5 },
+    { "year": 2013, "production_mwh": 150811, "capacity_percent": 57.4 },
+    { "year": 2012, "production_mwh": 135155, "capacity_percent": 51.4 },
+    { "year": 2011, "production_mwh": 112765, "capacity_percent": 42.9 },
+    { "year": 2010, "production_mwh": 106742, "capacity_percent": 40.6 }
+  ]
+}

@@ -2,14 +2,18 @@
 aruba_readings_20260924.json
 .DS_Store
 
+# Datos pesados / locales (las lecturas superan el límite de 100 MB de GitHub)
+data/raw/*lecturas*.json
+data/raw/*readings*.json
+data/interim/
+data/processed/
+.env
 
 # Archivos temporales de Python
 __pycache__/
 *.pyc
 .pytest_cache/
+.ipynb_checkpoints/
 
 # Entorno virtual
 .venv/
-
-data/raw/train_aruba_lecturas.json
-

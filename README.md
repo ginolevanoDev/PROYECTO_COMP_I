@@ -1,113 +1,216 @@
+# PROYECTO COMP I — Aruba Energía
+
 ## Estado actual del proyecto
 
-Actualmente se ha completado la primera fase de análisis exploratorio
-y preparación de los datos energéticos de Aruba.
+Se ha desarrollado y ejecutado un pipeline ETL para la preparación de datos meteorológicos y energéticos de Aruba, con el objetivo de obtener un dataset integrado, depurado y preparado para comenzar posteriormente el modelado mediante Machine Learning.
 
-### Trabajo realizado
+El proceso incluye la ingesta, limpieza, integración con datos meteorológicos ERA5, remuestreo temporal a 5 minutos, estimación de potencia eólica y generación del dataset procesado.
 
-- Carga de los datos de las 12 estaciones meteorológicas.
-- Análisis inicial de 421.584 registros.
-- Detección y eliminación de registros duplicados.
-- Conversión y normalización de variables meteorológicas.
-- Comprobación de la frecuencia temporal de los datos (5 minutos).
-- Análisis exploratorio de temperatura, humedad, viento, presión,
-  precipitación, visibilidad e índice UV.
-- Integración de datos meteorológicos ERA5.
-- Asociación de estaciones con los puntos ERA5 más cercanos.
-- Primera estimación del viento a altura de buje.
-- Primera estimación de la potencia del parque eólico.
-- Implementación de un modelo de persistencia como línea base
-  para la predicción a t+15 minutos.
+## 1. Trabajo realizado
 
-El análisis se encuentra en:
+### Ingesta y limpieza de datos
 
-`EDA_Aruba_Energia.ipynb`
+- Carga de datos de 12 estaciones meteorológicas.
+- Procesamiento de 421.584 lecturas originales.
+- Asociación de las lecturas con sus respectivas estaciones.
+- Eliminación de 107.136 registros duplicados.
+- Obtención de 314.448 registros depurados.
+- Corrección de tipos de datos y normalización temporal.
+- Identificación y tratamiento de valores fuera de rango y anomalías.
+- Análisis de valores nulos y variables poco fiables.
 
-### Próximos pasos
+### Integración meteorológica
 
-Crear las Lag Features, integrar los datos de demanda eléctrica,
-construir el dataset de entrenamiento, entrenar los modelos de
-regresión y evaluar su rendimiento mediante RMSE(ROOT MEAN SQUARED ERROR) y R^2.
+Se utiliza ERA5 como fuente meteorológica adicional para enriquecer los datos de las estaciones.
 
+- Incorporación de componentes del viento, temperatura y presión.
+- Identificación del punto ERA5 más cercano a las estaciones.
+- Selección del punto ERA5 situado en las coordenadas (12.5, -70.0).
+- Interpolación de los datos horarios a intervalos de 5 minutos.
+- Comprobación de la frecuencia temporal.
+- Validación de correspondencia temporal y ausencia de duplicados tras la integración.
 
-## Dataset y descarga del proyecto
+### Estimación de potencia eólica
 
-El archivo `DATA/era5_aruba.csv` ocupa aproximadamente 421,5 MB
-y se almacena mediante Git LFS.
+Se han implementado funciones para estimar la generación del parque eólico a partir de los datos meteorológicos y de los parámetros de los aerogeneradores.
 
-Para descargar el proyecto con el dataset completo, es necesario
-tener Git y Git LFS instalados.
+Las principales variables derivadas son:
 
-### 1. Instalar Git LFS
+- `ws_buje_ms`: velocidad del viento a altura de buje.
+- `rho`: densidad del aire.
+- `park_kw_curva`: potencia estimada utilizando la curva de los aerogeneradores.
+- `park_kw`: potencia estimada calibrada del parque.
+- `kw_por_turbina`: potencia estimada por aerogenerador.
 
-En macOS, si utilizas Homebrew:
+La potencia calculada se encuentra entre 0 y 22.783,05 kW, dentro del límite de 30.000 kW establecido para el parque.
+
+**Nota:** la potencia es una estimación basada en ERA5 y la curva de potencia. No representa una medición directa de producción eléctrica real.
+
+### Demanda eléctrica
+
+El pipeline contempla la integración de demanda eléctrica.
+
+Cuando no existe una serie real disponible, se utiliza un perfil sintético parametrizado en `config/config.yaml`.
+
+La demanda sintética se identifica mediante la variable `demanda_sintetica` y no debe confundirse con demanda eléctrica observada.
+
+## 2. Pipeline ETL
+
+El proyecto dispone de un comando para ejecutar el proceso completo de ingesta, limpieza e integración.
+
+### Requisitos
+
+- Python 3.11.
+- Dependencias especificadas en `requirements.txt`.
+- Archivos originales disponibles en las rutas configuradas.
+
+### Instalación
+
+Desde la raíz del repositorio:
 
 ```bash
-brew install git-lfs
+python3.11 -m venv .venv311
+source .venv311/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-Para Windows u otros sistemas, consulta:
-https://git-lfs.com
+En Windows debe utilizarse el comando de activación correspondiente al entorno virtual.
 
-Después de instalarlo, ejecuta una vez por ordenador:
+### Ejecución completa
 
 ```bash
-git lfs install
+python scripts/run_pipeline.py
 ```
 
-### 2. Descargar el proyecto
+Este comando ejecuta:
 
-Si el repositorio es privado, necesitas acceso como colaborador
-y autenticarte con una cuenta de GitHub autorizada.
+1. `scripts/run_etl.py`: carga y limpieza de estaciones y lecturas.
+2. `scripts/run_integracion_5min.py`: integración meteorológica, estimación de potencia y generación del dataset final.
 
-Desde la carpeta donde quieras guardar el proyecto:
+Los resultados se guardan en:
+
+```text
+data/interim/clean.parquet
+data/processed/dataset_5min.parquet
+```
+
+## 3. Dataset final
+
+El dataset integrado generado contiene:
+
+| Característica | Resultado |
+|---|---|
+| Registros | 314.448 |
+| Estaciones | 12 |
+| Frecuencia temporal | 5 minutos |
+| Duplicados estación-fecha | 0 |
+| Intervalos irregulares | 0 |
+| Nulos en viento ERA5 y potencia | 0 |
+| Potencia eólica estimada | 0–22.783,05 kW |
+
+Se han conservado las lecturas meteorológicas y añadido variables relacionadas con ERA5, potencia eólica, demanda y tiempo.
+
+El archivo resultante es:
+
+`data/processed/dataset_5min.parquet`
+
+## 4. Preparación para Machine Learning
+
+Se ha implementado una función de división cronológica en:
+
+`src/models/split.py`
+
+La estrategia utiliza aproximadamente:
+
+- 80 % de las fechas para entrenamiento.
+- 20 % de las fechas para prueba.
+- Separación temporal para un horizonte de predicción de 15 minutos.
+- Conservación de las 12 estaciones en ambos conjuntos.
+
+Resultados de la comprobación:
+
+| Conjunto | Registros |
+|---|---:|
+| Entrenamiento | 251.520 |
+| Prueba | 62.892 |
+
+La función establece la división temporal. La construcción definitiva de la variable objetivo futura y el entrenamiento de modelos quedan para la fase de modelado.
+
+Debe evitarse utilizar variables que calculan directamente `park_kw` como predictores de ese mismo objetivo sin justificarlo, para prevenir una evaluación engañosa.
+
+## 5. EDA
+
+El análisis exploratorio se encuentra en:
+
+`notebooks/EDA_Aruba_Energia.ipynb`
+
+Se han estudiado las dimensiones, tipos de datos, distribuciones, valores nulos, duplicados, valores anómalos y relaciones entre variables meteorológicas.
+
+También se ha documentado la calidad de los datos, las limitaciones de algunas mediciones y la utilidad de fuentes meteorológicas externas.
+
+## 6. Pruebas
+
+El proyecto utiliza pytest para verificar las funcionalidades implementadas.
+
+Para ejecutar las pruebas:
+
+```bash
+python -m pytest tests/ -v
+```
+
+**Última ejecución comprobada: 57 pruebas superadas.**
+
+Las pruebas cubren la ingesta, limpieza, integración de fuentes, validaciones meteorológicas y cálculos de potencia.
+
+## 7. Configuración
+
+Los principales parámetros se encuentran en:
+
+`config/config.yaml`
+
+El archivo permite configurar las rutas, frecuencia temporal, umbrales de limpieza, parámetros meteorológicos, demanda y factor de calibración.
+
+Los parámetros de las turbinas se mantienen en:
+
+`config/turbinas.yaml`
+
+## 8. GitHub y Git LFS
+
+El repositorio se encuentra en:
+
+https://github.com/ginolevanoDev/PROYECTO_COMP_I
+
+Para clonar el proyecto:
 
 ```bash
 git clone https://github.com/ginolevanoDev/PROYECTO_COMP_I.git
 cd PROYECTO_COMP_I
+git lfs install
 git lfs pull
 ```
 
-El CSV estará en `DATA/era5_aruba.csv`.
+Git LFS se utiliza para gestionar archivos grandes configurados en `.gitattributes`.
 
+Los archivos de entrada necesarios para ejecutar el pipeline deben estar disponibles en las rutas definidas en `config/config.yaml`.
 
-### 3. Actualizar una copia existente
+No se deben subir entornos virtuales, credenciales ni archivos temporales.
 
-Antes de empezar a trabajar, guarda tus cambios pendientes
-en un commit. Después, desde la carpeta del repositorio:
-
-```bash
-git pull
-git lfs pull
-```
-
-Git LFS solo descargará los archivos necesarios que no estén
-disponibles en tu copia local.
-
-### 4. Compartir cambios
-
-Después de crear, modificar o eliminar archivos:
+Antes de compartir cambios:
 
 ```bash
 git status
-git add .
-git commit -m "Descripción de los cambios realizados"
-git push
 ```
 
-Revisa `git status` antes de añadir los archivos para comprobar
-qué cambios vas a compartir.
+Los cambios deben integrarse mediante el flujo de ramas y Pull Requests establecido por el equipo.
 
-Los CSV ya están configurados para utilizar Git LFS mediante
-`.gitattributes`. Los colaboradores no necesitan repetir
-`git lfs track`.
+## 9. Próximos pasos
 
-### Uso del dataset en equipo
+El dataset se encuentra preparado para iniciar la fase posterior de modelado.
 
-- Conservar el CSV original como fuente de datos.
-- Realizar la limpieza, las transformaciones y la creación
-  de variables desde el notebook.
-- Evitar subir versiones innecesarias del CSV: cada versión
-  modificada ocupa espacio adicional en Git LFS.
-- Trabajar con la copia local del dataset para evitar
-  descargas completas repetidas.
+Las siguientes tareas previstas son:
+
+- Completar las variables *lag* y las variables objetivo futuras.
+- Entrenar modelos de regresión para predicción a 15 minutos.
+- Evaluar los modelos mediante RMSE y R².
+- Comparar los resultados con un modelo de persistencia.
+- Evaluar las limitaciones derivadas del uso de potencia estimada y demanda sintética.

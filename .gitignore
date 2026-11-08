@@ -4,6 +4,7 @@ aruba_readings_20260924.json
 
 # Datos pesados / locales (las lecturas superan el límite de 100 MB de GitHub)
 data/raw/*lecturas*.json
+!data/raw/train_aruba_lecturas.json
 data/raw/*readings*.json
 data/interim/
 data/processed/
@@ -18,3 +19,9 @@ __pycache__/
 # Entorno virtual
 .venv/
 .idea/
+
+
+.venv/
+.venv311/
+__pycache__/
+*.pyc

@@ -40,3 +40,41 @@ def turbine_power(ws, turbine, rho=None):
 def park_power(ws, turbine, rho=None):
     """Potencia del parque (kW): n_turbines × potencia de una turbina."""
     return turbine["n_turbines"] * turbine_power(ws, turbine, rho)
+
+
+# Altura (m) del viento de ERA5 que se lleva a buje.
+ERA5_ALTURA_M = 100
+
+
+def add_park_power(df, turbine, factor):
+    """Añade al dataset el viento a buje, la densidad y la potencia del parque (HU-24, RF-05).
+
+    `df` necesita `ws100_ms` (viento de ERA5 a 100 m, en m/s), `alpha`, `t2m_c` (°C) y `sp_hpa` (hPa),
+    como los deja la rejilla de 5 minutos de HU-22. Devuelve una copia con:
+    - `ws_buje_ms`: viento a buje (80 m) con la ley potencial y el `alpha` de ERA5.
+    - `rho`: densidad del aire (kg/m³).
+    - `park_kw_curva`: potencia de las 10 turbinas con la curva, sin calibrar (0 a 30.000 kW).
+    - `park_kw`: potencia calibrada, `park_kw_curva` x `factor`. Es la variable a predecir.
+    - `kw_por_turbina`: `park_kw` / n_turbines, la que compara la alerta de RF-13 con 500 kW.
+    `factor` es `calibration.wind_cf_factor` de config.yaml.
+    """
+    if not 0 < factor <= 1:
+        raise ValueError(f"El factor de calibración debe estar entre 0 y 1, no {factor}")
+    df = df.copy()
+    df["ws_buje_ms"] = wind_at_hub(df["ws100_ms"], ERA5_ALTURA_M, turbine["hub_height_m"], df["alpha"])
+    df["rho"] = air_density(df["t2m_c"], df["sp_hpa"])
+    df["park_kw_curva"] = park_power(df["ws_buje_ms"], turbine, df["rho"])
+    df["park_kw"] = df["park_kw_curva"] * factor
+    df["kw_por_turbina"] = df["park_kw"] / turbine["n_turbines"]
+    return df
+
+
+def hourly_park_power(era, turbine, factor):
+    """Potencia horaria del parque a partir de la salida de `load_era5` (HU-21), sin pasar a 5 minutos.
+
+    Sirve para comprobar la curva y la calibración sobre el ERA5 original
+    (scripts/check_park_power.py). El dataset de 5 minutos usa `add_park_power` sobre la rejilla de HU-22.
+    """
+    entrada = pd.DataFrame({"ws100_ms": np.hypot(era["u100"], era["v100"]), "alpha": era["alpha"],
+                            "t2m_c": era["t2m_C"], "sp_hpa": era["sp_hPa"]}, index=era.index)
+    return add_park_power(entrada, turbine, factor)

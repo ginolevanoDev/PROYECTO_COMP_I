@@ -70,4 +70,12 @@ demand:
   weekend_factor: 0.93   # sábado y domingo
   noise: 0.02            # ruido normal relativo, con la semilla `seed`
 
+# HU-24 (RF-05): calibración de la potencia del parque frente a la producción real.
+calibration:
+  # Factor de capacidad real de 2025 (53,0 %, historical_figures.json) entre el que da la
+  # curva con ERA5 de enero a octubre de 2026 (69,9 %): 0,758. Recoge pérdidas por estela,
+  # disponibilidad y curtailment, que la curva de una turbina aislada no ve. Es un valor fijo:
+  # no se recalcula en el código (ver docs/design/inventario_fuentes.md).
+  wind_cf_factor: 0.76
+
 seed: 42

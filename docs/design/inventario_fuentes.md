@@ -20,7 +20,7 @@ Los valores se usan desde `config/turbinas.yaml`.
 **Contraste con la producción real**
 - Con el viento de ERA5 en el punto (12,5, −70,0), llevado a 80 m, el factor de capacidad estimado es del **69,9 %** (71,6 % sin corregir la densidad).
 - El factor de capacidad histórico de 2025 fue del **53,0 %**.
-- La diferencia (factor de unos 0,76) se debe a pérdidas por estela, disponibilidad y curtailment, que la curva de una turbina aislada no recoge. Corresponde a la HU de calibración.
+- La diferencia (factor de unos 0,76) se debe a pérdidas por estela, disponibilidad y curtailment, que la curva de una turbina aislada no recoge. Se corrige en HU-24 (ver «Potencia del parque»).
 
 ## Reanálisis ERA5 (HU-21, RF-02)
 
@@ -67,3 +67,27 @@ La forma es una decisión del equipo (guía del Sprint 1), sin fuente que la res
 **Limitación.** La demanda no interviene en la predicción de la potencia eólica. Sí en el déficit (RF-17) y en las alertas por sobrecarga (RF-08 y RF-18), que por eso solo son ilustrativas mientras no haya serie real.
 
 **Si llegan datos reales.** Basta con dejar el fichero en `data/external/demanda.csv` (columnas `timestamp` en UTC y `demanda_kw`). `load_or_build_demand` lo usa en lugar del perfil sintético, interpolado a los instantes de las lecturas, y da error si no cubre el periodo. Está pendiente preguntar a la docente si existe esa serie.
+
+## Potencia del parque (HU-24, RF-05)
+
+| Dato | Valor | Fuente | Consulta |
+|---|---|---|---|
+| Factor de capacidad real de 2025 | 53,0 % (139.246 MWh / (30 MW × 8.760 h)) | `data/external/historical_figures.json` | 08/11/2026 |
+| Factor de capacidad con la curva | 69,9 % con ERA5 del 01/01 al 15/10/2026 (6.901 horas), en el punto (12,5, −70,0), a 80 m y con corrección de densidad | Calculado con `park_power` | 08/11/2026 |
+| Factor de calibración | 53,0 / 69,9 = 0,758, redondeado a **0,76** (`calibration.wind_cf_factor` en `config/config.yaml`) | Los dos anteriores | 08/11/2026 |
+
+**Cómo se calcula** (`add_park_power`, en `src/data/power_estimation.py`):
+1. Viento a buje: el de ERA5 a 100 m llevado a 80 m con la ley potencial y el `alpha` horario (`ws_buje_ms`, en m/s). Se usa ERA5 y no las estaciones porque el viento de las estaciones apenas sigue al de ERA5 (r ≈ 0,08 en el EDA).
+2. Densidad del aire con `t2m` y `sp` de ERA5 (`rho`).
+3. Potencia de las 10 turbinas con la curva y la corrección de densidad (`park_kw_curva`, de 0 a 30.000 kW).
+4. Potencia calibrada: `park_kw = park_kw_curva × 0,76`. Es la variable a predecir.
+5. `kw_por_turbina = park_kw / 10`, la que compara la alerta de RF-13 con 500 kW.
+
+**Comprobación en el periodo de las lecturas** (`python scripts/check_park_power.py`, ERA5 horario del 01/04 02:00 al 01/07/2026 02:00 UTC, 2.185 horas):
+- El factor de capacidad es del 72,3 % con la curva y del 54,9 % calibrado, frente al 53,0 % real de 2025. No sale exactamente 53 % porque el factor se calculó con el periodo de enero a octubre, que tiene menos viento que el de abril a junio.
+- `park_kw` va de 0 a 22.783 kW, sin valores nulos.
+- El script guarda la serie horaria en `data/interim/potencia_parque_horaria.parquet` y la figura de comprobación en `reports/figures/fig_potencia_parque_1.png` (viento a buje frente a potencia, con la curva sin calibrar y calibrada).
+
+**Supuestos y limitaciones**
+- **El factor es único y constante.** No distingue por velocidad de viento, hora ni turbina. Con solo un dato anual de producción no se puede calibrar con más detalle.
+- **La potencia es estimada, no medida.** No hay datos reales de producción en el periodo, así que el modelo aprenderá la curva calibrada más que la dinámica real del parque (riesgo del backlog). Por eso conviene compararlo siempre con la persistencia.

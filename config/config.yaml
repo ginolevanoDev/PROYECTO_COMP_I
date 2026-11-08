@@ -9,10 +9,18 @@ paths:
   stations: data/raw/aruba_stations.json
   readings: data/raw/train_aruba_lecturas.json
   clean: data/interim/clean.parquet
+  model: modelo_aruba_energia.pkl
+  # HU-21 (RF-02): fuentes externas
   era5: data/external/datos_meteo.csv
   equipment: data/external/equipment_installed.json
-  dataset: data/processed/dataset_5min.parquet
-  model: modelo_aruba_energia.pkl
+  # Serie real de demanda (CSV con columnas timestamp en UTC y demanda_kw). Hoy no existe:
+  # mientras no esté, load_or_build_demand construye la demanda sintética.
+  demand: data/external/demanda.csv
+
+# HU-21 (RF-02): reanálisis ERA5
+era5:
+  # Punto de la rejilla (0,25°) más cercano a Vader Piet (12,474 N, -69,891 W), a 12,2 km.
+  point: [12.5, -70.0]
 
 time:
   freq: 5min
@@ -53,15 +61,13 @@ thresholds:
   # (10 turbinas -> 5000 kW en el parque).
   alert_kw_per_turbine: 500
 
-# HU-21 / RF-02: demanda SINTÉTICA (no hay datos reales). La media y el pico salen de
-# data/external/equipment_installed.json; estos parámetros de forma son un SUPUESTO del
-# modelo, sin fuente, a declarar en el Alcance. Solo importa la proporción entre ellos:
-# la serie final se reescala a la media y el pico de referencia.
+# HU-21 (RF-02): demanda eléctrica. No hay serie real: perfil sintético documentado como
+# supuesto en docs/design/inventario_fuentes.md. Media y pico de equipment_installed.json
+# (load_demand_2026: 121 MW y 172 MW), en kW como el resto de potencias.
 demand:
-  peak_hour_local: 15     # hora local del máximo del ciclo diario
-  daily_amplitude: 0.15   # amplitud relativa del ciclo diario
-  weekend_factor: 0.95    # demanda relativa en sábado y domingo
-  temp_coef_per_c: 0.02   # aumento relativo por cada °C sobre la media del periodo
-  noise_std: 0.01         # desviación del ruido relativo (semilla: seed)
+  mean_kw: 121000
+  peak_kw: 172000
+  weekend_factor: 0.93   # sábado y domingo
+  noise: 0.02            # ruido normal relativo, con la semilla `seed`
 
 seed: 42

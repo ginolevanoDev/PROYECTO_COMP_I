@@ -1,9 +1,10 @@
-"""HU-21 / RF-02: reanálisis ERA5 (datos_meteo.csv) llevado a los instantes de las lecturas.
+"""Reanálisis ERA5 y rejilla común de 5 minutos (RF-02, RF-04).
 
-ERA5 es horario y está en UTC. Las lecturas son cada 5 min y RF-03 ya las deja en UTC (+4 h).
-Se interpolan en el tiempo las componentes del viento (u, v), no la velocidad ni la dirección,
-porque la dirección no se puede interpolar linealmente (salto 359° -> 0°). Después se recalculan
-velocidad, dirección y exponente de cizalladura como en el EDA (§3 y §5).
+HU-21 (RF-02): lectura de ERA5 en el punto del parque (`load_era5`).
+HU-22 (RF-04): paso a 5 minutos y unión de fuentes (se añade en este mismo fichero).
+
+ERA5 es horario y viene en UTC sin zona; aquí se marca como UTC. Las lecturas de las
+estaciones ya salen en UTC de `clean_readings`, así que no hay que sumar ningún desfase.
 """
 import numpy as np
 import pandas as pd
@@ -12,55 +13,57 @@ from src.utils.logger import get_logger
 
 log = get_logger(__name__)
 
-# Columnas de ERA5 que se interpolan en el tiempo.
-COLUMNAS_ERA5 = ["u10", "v10", "u100", "v100", "t2m_C", "sp_hPa"]
+# Columnas de datos_meteo.csv que se conservan: viento a 10 y 100 m (componentes u y v),
+# temperatura, presión y rachas a 10 m. No se usan ssrd ni ssrd_Wm2: la radiación está mal
+# desacumulada (el EDA encontró un 25 % de valores negativos).
+ERA5_COLS = ["u100", "v100", "u10", "v10", "t2m_C", "sp_hPa", "i10fg"]
 
-# Recorte del exponente de cizalladura, el mismo que el EDA §5.
+# Recorte del exponente de cizalladura (decisión del EDA, §5).
 ALPHA_MIN, ALPHA_MAX = 0.0, 0.5
 
 
-def haversine_km(lat1, lon1, lat2, lon2):
-    """Distancia en km sobre la esfera entre dos puntos (admite arrays)."""
-    lat1, lon1, lat2, lon2 = map(np.radians, (lat1, lon1, lat2, lon2))
-    a = np.sin((lat2 - lat1) / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin((lon2 - lon1) / 2) ** 2
-    return 2 * 6371.0 * np.arcsin(np.sqrt(a))
+def _utc(t):
+    """Timestamp en UTC; si llega sin zona, se interpreta como UTC."""
+    t = pd.Timestamp(t)
+    return t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
 
 
-def select_point(era, latlon):
-    """Serie horaria de ERA5 (índice UTC, ordenada) del punto de rejilla más cercano a `latlon`."""
-    puntos = era[["latitude", "longitude"]].drop_duplicates().reset_index(drop=True)
-    dist = haversine_km(latlon[0], latlon[1], puntos["latitude"].to_numpy(), puntos["longitude"].to_numpy())
-    i = int(np.argmin(dist))
-    lat, lon = puntos.loc[i, "latitude"], puntos.loc[i, "longitude"]
-    log.info("RF-02: punto ERA5 (%s, %s), a %.1f km del parque", lat, lon, dist[i])
+def shear_alpha(ws100, ws10):
+    """Exponente de cizalladura entre 10 y 100 m: ln(ws100 / ws10) / ln(10), recortado a [0, 0,5].
 
-    serie = era[(era["latitude"] == lat) & (era["longitude"] == lon)]
-    tiempo = pd.DatetimeIndex(pd.to_datetime(serie["time"]))
-    tiempo = tiempo.tz_localize("UTC") if tiempo.tz is None else tiempo.tz_convert("UTC")
-    serie = serie[COLUMNAS_ERA5].set_axis(tiempo.as_unit("ns").rename("timestamp")).sort_index()
-    return serie[~serie.index.duplicated()]
-
-
-def load_era5(path, latlon):
-    """Lee `datos_meteo.csv` y devuelve la serie del punto más cercano a `latlon` (ver `select_point`)."""
-    return select_point(pd.read_csv(path), latlon)
-
-
-def era5_at(era5, times):
-    """Interpola linealmente la serie horaria `era5` a los instantes `times` (UTC).
-
-    Devuelve un DataFrame indexado por los instantes únicos y ordenados de `times` con las columnas
-    de ERA5 más `ws10_ms`, `ws100_ms`, `wdir100_deg` (de dónde viene) y `alpha` (cizalladura 10->100 m).
-    No extrapola: fuera del periodo de ERA5 todo queda en NaN.
+    Es el `alpha` de la ley potencial que usa `wind_at_hub` para llevar el viento a 80 m.
     """
-    times = pd.DatetimeIndex(times).unique().sort_values().as_unit("ns")
-    union = era5.index.union(times)
-    out = era5.reindex(union).interpolate(method="time", limit_area="inside").reindex(times)
-
-    out["ws10_ms"] = np.hypot(out["u10"], out["v10"])
-    out["ws100_ms"] = np.hypot(out["u100"], out["v100"])
-    out["wdir100_deg"] = (270 - np.degrees(np.arctan2(out["v100"], out["u100"]))) % 360
     with np.errstate(divide="ignore", invalid="ignore"):
-        alpha = np.log(out["ws100_ms"] / out["ws10_ms"]) / np.log(100 / 10)
-    out["alpha"] = alpha.clip(ALPHA_MIN, ALPHA_MAX)
-    return out
+        alpha = np.log(ws100 / ws10) / np.log(10)
+    return alpha.clip(ALPHA_MIN, ALPHA_MAX)
+
+
+def load_era5(path, lat, lon, start, end):
+    """ERA5 horario del punto (lat, lon) entre `start` y `end` (HU-21, RF-02).
+
+    Se queda con una hora de margen a cada lado (hora en punto anterior a `start` y posterior a
+    `end`) para que la interpolación a 5 minutos de HU-22 cubra los extremos.
+
+    Devuelve un DataFrame con índice horario en UTC, las columnas de `ERA5_COLS` y `alpha`
+    (cizalladura horaria). Lanza ValueError si el punto no está en el fichero o si en el periodo
+    falta alguna hora, para que el ETL no siga con huecos sin avisar.
+    """
+    era = pd.read_csv(path, usecols=["time", "latitude", "longitude", *ERA5_COLS])
+    era = era[np.isclose(era["latitude"], lat) & np.isclose(era["longitude"], lon)]
+    if era.empty:
+        raise ValueError(f"El punto ({lat}, {lon}) no está en {path}: revisa era5.point en config.yaml")
+
+    era["time"] = pd.to_datetime(era["time"], utc=True)
+    era = era.drop_duplicates("time").set_index("time").sort_index()
+    era = era.drop(columns=["latitude", "longitude"])
+
+    ini, fin = _utc(start).floor("h"), _utc(end).ceil("h")
+    era = era.loc[ini:fin]
+    faltan = pd.date_range(ini, fin, freq="h").difference(era.index)
+    if len(faltan):
+        raise ValueError(f"ERA5 no cubre el periodo {ini} -> {fin}: faltan {len(faltan)} horas "
+                         f"(la primera, {faltan[0]})")
+
+    era["alpha"] = shear_alpha(np.hypot(era["u100"], era["v100"]), np.hypot(era["u10"], era["v10"]))
+    log.info("RF-02: ERA5 en (%s, %s): %d horas de %s a %s, sin huecos", lat, lon, len(era), ini, fin)
+    return era

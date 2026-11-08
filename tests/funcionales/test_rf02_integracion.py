@@ -1,94 +1,136 @@
-"""Pruebas de aceptación de HU-21 / RF-02: integración de ERA5, turbinas y demanda con las lecturas."""
+"""Pruebas de HU-21 / RF-02: ERA5 y demanda eléctrica.
+
+Usan datos pequeños inventados, nunca el fichero real de ERA5 ni el de lecturas.
+"""
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from src.data.cleaning import clean_readings
-from src.data.demand import build_demand, load_demand_reference
-from src.data.ingestion import unir_lecturas_estaciones
-from src.data.integration import integrate_sources
-from src.data.resampling import era5_at, select_point
+from src.data.demand import load_or_build_demand
+from src.data.resampling import ERA5_COLS, load_era5, shear_alpha
 from src.utils.config_loader import load_turbine
 
-COLUMNAS_NUEVAS = ["era5_ws10_ms", "era5_ws100_ms", "era5_wdir100_deg", "era5_alpha", "era5_t2m_c",
-                   "era5_sp_hpa", "ws_buje_ms", "rho_kgm3", "potencia_parque_kw", "demanda_mw"]
 
+def _era5_csv(tmp_path, horas=range(6), lats=(12.5, 12.75), u100=-10.0, u10=-8.0):
+    """CSV con el formato de datos_meteo.csv: horas del 1/4/2026 en dos puntos de la rejilla."""
+    filas = [{"time": f"2026-04-01 {h:02d}:00:00", "latitude": lat, "longitude": -70.0, "u100": u100,
+              "v100": 0.0, "u10": u10, "v10": 0.0, "t2m_C": 28.0, "sp_hPa": 1011.0, "i10fg": 12.0,
+              "ssrd": -5.0, "ssrd_Wm2": -0.001}
+             for h in horas for lat in lats]
+    ruta = tmp_path / "era5.csv"
+    pd.DataFrame(filas).to_csv(ruta, index=False)
+    return ruta
+
+
+# --- ERA5 -------------------------------------------------------------------------------------
+
+def test_load_era5_filtra_punto_y_periodo(tmp_path):
+    era = load_era5(_era5_csv(tmp_path), 12.5, -70.0, "2026-04-01 01:00Z", "2026-04-01 03:00Z")
+    assert len(era) == 3
+    assert str(era.index.tz) == "UTC"
+
+
+def test_load_era5_deja_una_hora_de_margen(tmp_path):
+    era = load_era5(_era5_csv(tmp_path), 12.5, -70.0, "2026-04-01 01:35Z", "2026-04-01 03:20Z")
+    assert era.index[0] == pd.Timestamp("2026-04-01 01:00Z")
+    assert era.index[-1] == pd.Timestamp("2026-04-01 04:00Z")
+
+
+def test_load_era5_columnas_sin_radiacion(tmp_path):
+    era = load_era5(_era5_csv(tmp_path), 12.5, -70.0, "2026-04-01 01:00Z", "2026-04-01 03:00Z")
+    assert list(era.columns) == [*ERA5_COLS, "alpha"]
+    assert not {"ssrd", "ssrd_Wm2"} & set(era.columns)
+
+
+def test_alpha_de_la_ley_potencial(tmp_path):
+    era = load_era5(_era5_csv(tmp_path), 12.5, -70.0, "2026-04-01 01:00Z", "2026-04-01 03:00Z")
+    assert era["alpha"].iloc[0] == pytest.approx(np.log(10 / 8) / np.log(10))
+
+
+def test_alpha_recortado_entre_0_y_05():
+    alpha = shear_alpha(pd.Series([5.0, 10.0, 10.0]), pd.Series([10.0, 10.0, 0.5]))
+    assert alpha.tolist() == [0.0, 0.0, 0.5]
+
+
+def test_load_era5_falla_si_el_punto_no_existe(tmp_path):
+    with pytest.raises(ValueError, match="no está"):
+        load_era5(_era5_csv(tmp_path), 12.25, -70.0, "2026-04-01 01:00Z", "2026-04-01 03:00Z")
+
+
+def test_load_era5_falla_si_no_cubre_el_periodo(tmp_path):
+    with pytest.raises(ValueError, match="no cubre"):
+        load_era5(_era5_csv(tmp_path), 12.5, -70.0, "2026-04-01 03:00Z", "2026-04-01 08:00Z")
+
+
+def test_load_era5_falla_si_falta_una_hora(tmp_path):
+    ruta = _era5_csv(tmp_path, horas=[0, 1, 3, 4])
+    with pytest.raises(ValueError, match="faltan 1 horas"):
+        load_era5(ruta, 12.5, -70.0, "2026-04-01 00:00Z", "2026-04-01 04:00Z")
+
+
+def test_punto_era5_es_el_mas_cercano_al_parque(cfg):
+    # La rejilla de ERA5 va de 0,25 en 0,25 grados: el nodo más cercano es el redondeo a 0,25.
+    lat, lon = load_turbine()["park_latlon"]
+    assert cfg["era5"]["point"] == [round(lat * 4) / 4, round(lon * 4) / 4]
+
+
+# --- Demanda ----------------------------------------------------------------------------------
 
 @pytest.fixture
-def turbine():
-    return load_turbine()
+def semana():
+    return pd.date_range("2026-04-01", periods=7 * 288, freq="5min", tz="UTC")
 
 
-@pytest.fixture
-def era5_raw():
-    """ERA5 sintético de 03:00 a 06:00 UTC en dos puntos. En (12.5, -70.0) el viento a 100 m sopla
-    del este a 10, 11, 12 y 13 m/s; el otro punto, lejos del parque, está en calma."""
-    filas = []
-    for lat, lon, base in [(12.5, -70.0, 10.0), (12.75, -70.25, 0.0)]:
-        for i, hora in enumerate(range(3, 7)):
-            v = base + i
-            filas.append({"time": f"2026-04-01 0{hora}:00:00", "latitude": lat, "longitude": lon,
-                          "u10": -0.8 * v, "v10": 0.0, "u100": -v, "v100": 0.0,
-                          "t2m_C": 27.0, "sp_hPa": 1013.0})
-    return pd.DataFrame(filas)
+def test_demanda_sintetica(semana):
+    a = load_or_build_demand(semana, 121000, 172000, seed=42)
+    b = load_or_build_demand(semana, 121000, 172000, seed=42)
+    assert a.mean() == pytest.approx(121000)
+    assert a.max() == pytest.approx(172000)
+    assert a.equals(b)  # misma semilla, mismo resultado (RNF-04)
 
 
-@pytest.fixture
-def era5(era5_raw, turbine):
-    return select_point(era5_raw, turbine["park_latlon"])
+def test_demanda_alineada_con_las_lecturas(semana):
+    d = load_or_build_demand(semana, 121000, 172000)
+    assert d.index.equals(semana)
+    assert d.name == "demanda_kw"
+    assert d.notna().all() and (d > 0).all()
 
 
-def test_elige_el_punto_mas_cercano_al_parque(era5):
-    assert len(era5) == 4
-    assert era5["u100"].tolist() == [-10.0, -11.0, -12.0, -13.0]
-    assert str(era5.index.tz) == "UTC"
+def test_demanda_forma_del_perfil(semana):
+    d = load_or_build_demand(semana, 121000, 172000, noise=0.0)
+    local = d.index.tz_convert("America/Aruba")
+    por_hora = d.groupby(local.hour).mean()
+    assert por_hora.idxmax() in (19, 20)  # máximo a las 19-20 h locales
+    assert por_hora.idxmin() in (3, 4)    # mínimo de madrugada
+    assert d[local.day_of_week >= 5].mean() < d[local.day_of_week < 5].mean()  # fin de semana, menos
 
 
-def test_interpola_a_5_min_y_no_extrapola(era5):
-    t = pd.to_datetime(["2026-04-01T03:30Z", "2026-04-01T03:05Z", "2026-04-01T02:55Z", "2026-04-01T06:05Z"])
-    e = era5_at(era5, t)
-    assert e.loc[pd.Timestamp("2026-04-01T03:30Z"), "ws100_ms"] == pytest.approx(10.5)
-    assert e.loc[pd.Timestamp("2026-04-01T03:05Z"), "ws100_ms"] == pytest.approx(10 + 5 / 60)
-    assert e.loc[pd.Timestamp("2026-04-01T02:55Z")].isna().all()
-    assert e.loc[pd.Timestamp("2026-04-01T06:05Z")].isna().all()
+def test_demanda_real_si_existe(tmp_path, semana):
+    ruta = tmp_path / "demanda.csv"
+    horas = pd.date_range("2026-04-01", "2026-04-08", freq="h", tz="UTC")
+    pd.DataFrame({"timestamp": horas, "demanda_kw": np.arange(len(horas), dtype=float)}).to_csv(ruta, index=False)
+    d = load_or_build_demand(semana, 121000, 172000, real_path=ruta)
+    assert d.iloc[0] == 0.0
+    assert d.loc[pd.Timestamp("2026-04-01 00:30Z")] == pytest.approx(0.5)  # interpolada en el tiempo
 
 
-def test_direccion_y_cizalladura(era5):
-    e = era5_at(era5, pd.to_datetime(["2026-04-01T04:00Z"]))
-    assert e["wdir100_deg"].iloc[0] == pytest.approx(90.0)  # u < 0, v = 0: viento del este
-    assert e["alpha"].iloc[0] == pytest.approx(np.log(1 / 0.8) / np.log(10))
+def test_demanda_real_que_no_cubre_el_periodo_falla(tmp_path, semana):
+    ruta = tmp_path / "demanda.csv"
+    horas = pd.date_range("2026-04-01", "2026-04-03", freq="h", tz="UTC")
+    pd.DataFrame({"timestamp": horas, "demanda_kw": 1.0}).to_csv(ruta, index=False)
+    with pytest.raises(ValueError, match="no cubre"):
+        load_or_build_demand(semana, 121000, 172000, real_path=ruta)
 
 
-def test_demanda_calibrada_y_reproducible(cfg):
-    media, pico = load_demand_reference(cfg["paths"]["equipment"])
-    assert 0 < media < pico
-    t = pd.date_range("2026-04-01", "2026-04-15", freq="5min", tz="UTC")
-    d1 = build_demand(t, media, pico, cfg["demand"], cfg["time"]["tz"], seed=cfg["seed"])
-    d2 = build_demand(t, media, pico, cfg["demand"], cfg["time"]["tz"], seed=cfg["seed"])
-    assert d1.equals(d2)
-    assert d1.mean() == pytest.approx(media)
-    assert d1.max() == pytest.approx(pico)
-    assert (d1 > 0).all()
+def test_sin_fichero_real_usa_la_sintetica(tmp_path, semana):
+    d = load_or_build_demand(semana, 121000, 172000, real_path=tmp_path / "no_existe.csv")
+    assert d.mean() == pytest.approx(121000)
 
 
-def test_integracion_conserva_lecturas_y_anade_columnas(readings, stations, cfg, turbine, era5):
-    lecturas = clean_readings(unir_lecturas_estaciones(readings, stations), cfg)
-    ds = integrate_sources(lecturas, cfg, turbine, era5=era5)
-
-    assert len(ds) == len(lecturas)
-    assert set(COLUMNAS_NUEVAS) <= set(ds.columns)
-    assert ds[COLUMNAS_NUEVAS].notna().all().all()
-    # Las columnas del sistema dependen del instante, no de la estación
-    assert (ds.groupby("timestamp")[COLUMNAS_NUEVAS].nunique() == 1).all().all()
-    assert ds["potencia_parque_kw"].between(0, turbine["n_turbines"] * turbine["rated_kw"]).all()
-    assert (ds["ws_buje_ms"] < ds["era5_ws100_ms"]).all()  # buje a 80 m, por debajo de 100 m
-
-
-def test_fuera_del_periodo_de_era5_queda_en_nan(readings, stations, cfg, turbine, era5):
-    lecturas = clean_readings(unir_lecturas_estaciones(readings, stations), cfg)
-    ds = integrate_sources(lecturas, cfg, turbine, era5=era5.iloc[:2])  # ERA5 solo hasta las 04:00
-    assert len(ds) == len(lecturas)
-    tarde = ds["timestamp"] > pd.Timestamp("2026-04-01T04:00Z")
-    assert ds.loc[tarde, "potencia_parque_kw"].isna().all()
-    assert ds.loc[~tarde, "potencia_parque_kw"].notna().all()
-    assert ds["demanda_mw"].notna().all()
+def test_config_demanda_coincide_con_equipment_installed(cfg):
+    ref = json.loads(cfg["paths"]["equipment"].read_text(encoding="utf-8"))
+    ref = ref["equipment_installed_capacity"]["load_demand_2026"]
+    assert cfg["demand"]["mean_kw"] == ref["average_mw"] * 1000
+    assert cfg["demand"]["peak_kw"] == ref["max_peak_mw"] * 1000

@@ -1,12 +1,9 @@
-"""HU-21 / RF-02: demanda eléctrica del sistema de Aruba.
+"""Demanda eléctrica de Aruba (HU-21, RF-02).
 
-No hay datos reales de demanda, así que se construye un perfil SINTÉTICO:
-- La media y el pico salen de data/external/equipment_installed.json (`load_demand_2026`).
-- La forma (ciclo diario, fin de semana, efecto de la temperatura y ruido) es un supuesto del
-  modelo, sin fuente, con los parámetros de la sección `demand` de config.yaml.
-Hay que declararlo como supuesto en el Alcance de la memoria.
+No hay serie real de demanda. Si existe el fichero de `paths.demand` en config.yaml, se carga;
+si no, se construye un perfil sintético. Es un supuesto, documentado en
+docs/design/inventario_fuentes.md; está pendiente preguntar a la docente si hay datos reales.
 """
-import json
 from pathlib import Path
 
 import numpy as np
@@ -16,46 +13,53 @@ from src.utils.logger import get_logger
 
 log = get_logger(__name__)
 
-
-def load_demand_reference(path):
-    """Devuelve (media_mw, pico_mw) de `load_demand_2026` en equipment_installed.json."""
-    datos = json.loads(Path(path).read_text(encoding="utf-8"))
-    ref = datos["equipment_installed_capacity"]["load_demand_2026"]
-    return float(ref["average_mw"]), float(ref["max_peak_mw"])
+# Carga relativa por hora local de Aruba (0 a 23 h): mínimo de madrugada, máximo a las 19-20 h.
+PERFIL_HORARIO = [0.80, 0.77, 0.75, 0.74, 0.74, 0.76, 0.81, 0.87, 0.92, 0.96, 0.99, 1.01,
+                  1.02, 1.03, 1.04, 1.04, 1.05, 1.07, 1.10, 1.13, 1.12, 1.06, 0.97, 0.88]
 
 
-def build_demand(times, average_mw, peak_mw, params, tz, temp_c=None, seed=42):
-    """Perfil sintético de demanda (MW) en los instantes `times` (DatetimeIndex con zona horaria).
+def build_synthetic_demand(index, mean_kw, peak_kw, weekend=0.93, noise=0.02, seed=42, tz="America/Aruba"):
+    """Demanda sintética en kW sobre `index` (DatetimeIndex con zona horaria).
 
-    Forma = ciclo diario (máximo en `peak_hour_local`) x factor de fin de semana
-    + efecto de la temperatura + ruido con semilla. Después se reescala para que en el periodo
-    la media sea `average_mw` y el máximo `peak_mw`, así que de los parámetros de la forma solo
-    importa la proporción entre ellos.
+    Forma: `PERFIL_HORARIO` en hora local, x `weekend` en sábado y domingo, x (1 + ruido normal de
+    desviación `noise` con semilla `seed`). Después se reescala linealmente para que en `index` la
+    media sea `mean_kw` y el máximo `peak_kw`. Con la misma semilla sale siempre igual (RNF-04).
     """
-    times = pd.DatetimeIndex(times)
-    if len(times) == 0:
-        raise ValueError("No hay instantes para construir la demanda")
-    local = times.tz_convert(tz)
+    local = index.tz_convert(tz)
     hora = np.asarray(local.hour + local.minute / 60, dtype="float64")
-    dia = np.asarray(local.day_of_week)
-
-    forma = 1 + params["daily_amplitude"] * np.cos(2 * np.pi * (hora - params["peak_hour_local"]) / 24)
-    forma = forma * np.where(dia >= 5, params["weekend_factor"], 1.0)
-    if temp_c is not None:
-        t = np.asarray(temp_c, dtype="float64")
-        if np.isfinite(t).any():
-            t = np.where(np.isfinite(t), t, np.nanmean(t))
-            forma = forma + params["temp_coef_per_c"] * (t - t.mean())
-    forma = forma + np.random.default_rng(seed).normal(0, params["noise_std"], len(times))
-
-    rango = forma.max() - forma.mean()
-    escala = (peak_mw - average_mw) / rango if rango > 0 else 0.0
-    return pd.Series(average_mw + (forma - forma.mean()) * escala, index=times, name="demanda_mw")
+    base = np.interp(hora, np.arange(25), PERFIL_HORARIO + PERFIL_HORARIO[:1])
+    base = base * np.where(np.asarray(local.day_of_week) >= 5, weekend, 1.0)
+    base = base * (1 + np.random.default_rng(seed).normal(0, noise, len(index)))
+    b = (peak_kw - mean_kw) / (base.max() - base.mean())
+    return pd.Series(mean_kw + b * (base - base.mean()), index=index, name="demanda_kw")
 
 
-def synthetic_demand(times, cfg, temp_c=None):
-    """Demanda sintética en `times` con la referencia de equipment_installed.json y los parámetros de config."""
-    media, pico = load_demand_reference(cfg["paths"]["equipment"])
-    log.info("RF-02: demanda SINTÉTICA calibrada a media %.0f MW y pico %.0f MW (equipment_installed.json)",
-             media, pico)
-    return build_demand(times, media, pico, cfg["demand"], cfg["time"]["tz"], temp_c=temp_c, seed=cfg["seed"])
+def load_real_demand(path, index):
+    """Serie real de demanda llevada a `index` (UTC).
+
+    El fichero es un CSV con las columnas `timestamp` (UTC) y `demanda_kw`. Se interpola en el
+    tiempo sin extrapolar; si algún instante de `index` queda fuera de la serie, lanza ValueError.
+    """
+    real = pd.read_csv(path, usecols=["timestamp", "demanda_kw"])
+    real["timestamp"] = pd.to_datetime(real["timestamp"], utc=True)
+    serie = real.drop_duplicates("timestamp").set_index("timestamp")["demanda_kw"].sort_index()
+    out = serie.reindex(serie.index.union(index)).interpolate(method="time", limit_area="inside").reindex(index)
+    faltan = int(out.isna().sum())
+    if faltan:
+        raise ValueError(f"La demanda real de {path} no cubre {faltan} de {len(index)} instantes")
+    return out.rename("demanda_kw")
+
+
+def load_or_build_demand(index, mean_kw, peak_kw, weekend=0.93, noise=0.02, seed=42, tz="America/Aruba",
+                         real_path=None):
+    """Demanda en kW sobre `index`, alineada con las lecturas por timestamp (HU-21, RF-02).
+
+    Si `real_path` existe, carga la serie real (`load_real_demand`). Si no, construye el perfil
+    sintético (`build_synthetic_demand`) con los parámetros de la sección `demand` de config.yaml.
+    """
+    if real_path is not None and Path(real_path).exists():
+        log.info("RF-02: demanda real desde %s", real_path)
+        return load_real_demand(real_path, index)
+    log.info("RF-02: sin serie real de demanda: perfil SINTÉTICO con media %.0f kW y pico %.0f kW",
+             mean_kw, peak_kw)
+    return build_synthetic_demand(index, mean_kw, peak_kw, weekend, noise, seed, tz)

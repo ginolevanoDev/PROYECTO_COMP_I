@@ -67,3 +67,76 @@ def load_era5(path, lat, lon, start, end):
     era["alpha"] = shear_alpha(np.hypot(era["u100"], era["v100"]), np.hypot(era["u10"], era["v10"]))
     log.info("RF-02: ERA5 en (%s, %s): %d horas de %s a %s, sin huecos", lat, lon, len(era), ini, fin)
     return era
+
+
+def interpolar_era5_5min(era5):
+    """Interpola un único punto ERA5 a cinco minutos, sin extrapolar."""
+    import pandas as pd
+
+    datos = era5.copy()
+
+    # Acepta la fecha como columna time o como índice.
+    if "time" in datos.columns:
+        datos["time"] = pd.to_datetime(
+            datos["time"], utc=True, errors="raise"
+        )
+        datos = datos.set_index("time")
+    else:
+        datos.index = pd.to_datetime(
+            datos.index, utc=True, errors="raise"
+        )
+
+    datos = datos.sort_index()
+
+    if datos.empty or datos.index.hasnans:
+        raise ValueError("ERA5 no contiene fechas válidas.")
+
+    if datos.index.duplicated().any():
+        raise ValueError(
+            "Selecciona un único punto ERA5 sin fechas repetidas."
+        )
+
+    for columna in ["latitude", "longitude"]:
+        if columna in datos:
+            if datos[columna].nunique(dropna=False) != 1:
+                raise ValueError("Selecciona un único punto ERA5.")
+
+    # Interpolamos componentes del viento, no ángulos de dirección.
+    columnas = [
+        c for c in [
+            "u100", "v100", "u10", "v10",
+            "t2m_C", "sp_hPa", "i10fg"
+        ]
+        if c in datos.columns
+    ]
+
+    if not columnas:
+        raise ValueError("Faltan variables meteorológicas.")
+
+    originales = datos.index
+    fechas = pd.date_range(
+        originales.min().ceil("5min"),
+        originales.max().floor("5min"),
+        freq="5min",
+    )
+
+    salida = datos[columnas].apply(pd.to_numeric, errors="raise")
+    salida = salida.reindex(originales.union(fechas))
+
+    # Solo rellena entre observaciones: nunca fuera de cobertura.
+    salida = salida.interpolate(
+        method="time", limit_area="inside"
+    ).reindex(fechas)
+
+    for columna in ["latitude", "longitude"]:
+        if columna in datos:
+            salida[columna] = datos[columna].iloc[0]
+
+    salida["era5_interpolado"] = ~salida.index.isin(originales)
+    salida.index.name = "timestamp"
+
+    intervalos = salida.index.to_series().diff().dropna()
+    if not intervalos.eq(pd.Timedelta("5min")).all():
+        raise ValueError("La frecuencia final no es de cinco minutos.")
+
+    return salida

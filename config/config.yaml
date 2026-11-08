@@ -10,6 +10,17 @@ paths:
   readings: data/raw/train_aruba_lecturas.json
   clean: data/interim/clean.parquet
   model: modelo_aruba_energia.pkl
+  # HU-21 (RF-02): fuentes externas
+  era5: data/external/datos_meteo.csv
+  equipment: data/external/equipment_installed.json
+  # Serie real de demanda (CSV con columnas timestamp en UTC y demanda_kw). Hoy no existe:
+  # mientras no esté, load_or_build_demand construye la demanda sintética.
+  demand: data/external/demanda.csv
+
+# HU-21 (RF-02): reanálisis ERA5
+era5:
+  # Punto de la rejilla (0,25°) más cercano a Vader Piet (12,474 N, -69,891 W), a 12,2 km.
+  point: [12.5, -70.0]
 
 time:
   freq: 5min
@@ -49,5 +60,22 @@ thresholds:
   # predict.py compara potencia_parque / n_turbines con este valor
   # (10 turbinas -> 5000 kW en el parque).
   alert_kw_per_turbine: 500
+
+# HU-21 (RF-02): demanda eléctrica. No hay serie real: perfil sintético documentado como
+# supuesto en docs/design/inventario_fuentes.md. Media y pico de equipment_installed.json
+# (load_demand_2026: 121 MW y 172 MW), en kW como el resto de potencias.
+demand:
+  mean_kw: 121000
+  peak_kw: 172000
+  weekend_factor: 0.93   # sábado y domingo
+  noise: 0.02            # ruido normal relativo, con la semilla `seed`
+
+# HU-24 (RF-05): calibración de la potencia del parque frente a la producción real.
+calibration:
+  # Factor de capacidad real de 2025 (53,0 %, historical_figures.json) entre el que da la
+  # curva con ERA5 de enero a octubre de 2026 (69,9 %): 0,758. Recoge pérdidas por estela,
+  # disponibilidad y curtailment, que la curva de una turbina aislada no ve. Es un valor fijo:
+  # no se recalcula en el código (ver docs/design/inventario_fuentes.md).
+  wind_cf_factor: 0.76
 
 seed: 42

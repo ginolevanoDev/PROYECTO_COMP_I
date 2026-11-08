@@ -9,6 +9,9 @@ paths:
   stations: data/raw/aruba_stations.json
   readings: data/raw/train_aruba_lecturas.json
   clean: data/interim/clean.parquet
+  era5: data/external/datos_meteo.csv
+  equipment: data/external/equipment_installed.json
+  dataset: data/processed/dataset_5min.parquet
   model: modelo_aruba_energia.pkl
 
 time:
@@ -49,5 +52,16 @@ thresholds:
   # predict.py compara potencia_parque / n_turbines con este valor
   # (10 turbinas -> 5000 kW en el parque).
   alert_kw_per_turbine: 500
+
+# HU-21 / RF-02: demanda SINTÉTICA (no hay datos reales). La media y el pico salen de
+# data/external/equipment_installed.json; estos parámetros de forma son un SUPUESTO del
+# modelo, sin fuente, a declarar en el Alcance. Solo importa la proporción entre ellos:
+# la serie final se reescala a la media y el pico de referencia.
+demand:
+  peak_hour_local: 15     # hora local del máximo del ciclo diario
+  daily_amplitude: 0.15   # amplitud relativa del ciclo diario
+  weekend_factor: 0.95    # demanda relativa en sábado y domingo
+  temp_coef_per_c: 0.02   # aumento relativo por cada °C sobre la media del periodo
+  noise_std: 0.01         # desviación del ruido relativo (semilla: seed)
 
 seed: 42
